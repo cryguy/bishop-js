@@ -1,4 +1,3 @@
-// need .js for files in the directory... this is due to commonjs or "cjs" and some ECMAScript bs
 import elliptic from 'elliptic'
 import {UmbralDEM} from './dem.js'
 import {kdf, kdf_raw} from './randomOracles.js'
@@ -7,10 +6,10 @@ import {defaultCurve, DEM_KEYSIZE} from './config.js'
 import {mergeTypedArrays} from "./utils.js";
 import _ from "lodash"
 import {fromHexString, base64ToArrayBuffer} from "./utils.js";
-// smh...
+
 
 // todo: unit tests
-
+// smh...
 global.Buffer = global.Buffer || require('buffer').Buffer;
 
 if (typeof btoa === 'undefined') {
@@ -113,13 +112,13 @@ class Capsule {
 
 
     static fromJson(json, curve_) {
-        var jsondata = JSON.parse(json);
-        var metadata = null;
-        if (jsondata.metadata)
-            metadata = atob(jsondata.metadata)
+        const data = JSON.parse(json);
+        let metadata = null;
+        if (data.metadata)
+            metadata = atob(data.metadata)
 
 
-        return new Capsule(defaultCurve.curve.decodePoint(atob(jsondata.point_e)), defaultCurve.curve.decodePoint(atob(jsondata.point_v)), new CurveBN(Buffer.from(base64ToArrayBuffer(jsondata.signature))), metadata, atob(jsondata.hash), curve_);
+        return new Capsule(defaultCurve.curve.decodePoint(atob(data.point_e)), defaultCurve.curve.decodePoint(atob(data.point_v)), new CurveBN(Buffer.from(base64ToArrayBuffer(data.signature))), metadata, atob(data.hash), curve_);
     }
 
 

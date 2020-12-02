@@ -1,8 +1,7 @@
 import assert from 'assert';
-import {Capsule} from "../ditto/pre.js";
-import {defaultCurve} from "../ditto/config.js";
+import {Capsule} from "../src/pre.js";
+import {defaultCurve} from "../src/config.js";
 import _ from "lodash"
-import {mergeTypedArrays} from "../ditto/utils.js";
 
 
 describe('Capsule', function() {

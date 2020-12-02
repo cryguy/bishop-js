@@ -1,6 +1,6 @@
 import assert from "assert";
-import {toHexString} from "../ditto/utils.js";
-import {CurveBN} from "../ditto/curvebn.js";
+import {toHexString} from "../src/utils.js";
+import {CurveBN} from "../src/curvebn.js";
 
 describe('hash2curve', function() {
     it('output is same with java version', function() {

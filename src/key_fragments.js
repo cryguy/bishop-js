@@ -1,7 +1,8 @@
-import {defaultCurve} from "./config";
-import {CurveBN} from "./curvebn";
-import {base64ToArrayBuffer} from "./utils";
+import {defaultCurve} from "./config.js";
+import {CurveBN} from "./curvebn.js";
+import {base64ToArrayBuffer} from "./utils.js";
 import elliptic from "elliptic";
+import {unsafeHash2Point} from "./randomOracles";
 
 class CorrectnessProof {
     // not sure what this is for atm... not really used elsewhere
@@ -55,7 +56,7 @@ class CorrectnessProof {
     }
 }
 
-class kFrag{
+class kFrag {
     // todo : unit tests
     constructor(identifier, bn_key, point_commitment, point_precursor, signature_for_proxy, signature_for_bob, key_in_signature) {
         this._identifier = identifier;
@@ -85,7 +86,7 @@ class kFrag{
 
     asJson() {
         return JSON.stringify({
-            "identifier" : btoa(this._identifier),
+            "identifier": btoa(this._identifier),
             "bn_key": btoa(this._bn_key.asBytes()),
             "point_commitment": btoa(elliptic.utils.toArray(this._point_commitment.encodeCompressed())),
             "point_precursor": btoa(elliptic.utils.toArray(this._point_precursor.encodeCompressed())),
@@ -94,17 +95,21 @@ class kFrag{
             "key_in_signature": btoa(this._key_in_signature)
         })
     }
+
     // todo: verify
     // todo: verify_for_capsule
-    verify(signing_pubkey, delegating_pubkey, receiving_pubkey, curve, metadata){
+    verify(signing_pubkey, delegating_pubkey, receiving_pubkey, curve, metadata) {
+        const u = unsafeHash2Point(curve.g.encodeCompressed(), "NuCypher/UmbralParameters/u", curve); // static
+        const correct_commitment = this._point_commitment.eq(u.mul(this._bn_key)); // this might or might not fuck up
+
+        // combine all params to get hash
+
 
     }
 
     // todo: delegating_key_in_sig
     // todo: receiving_key_in_sig
 }
-
-
 
 
 class cFrag {
@@ -138,20 +143,19 @@ class cFrag {
             "proof": this.proof ? this.proof.asJson() : null
         });
     }
+
     // todo: proof correctness
     proof_correctness(capsule, kFrag, metadata) {
         const curve = capsule.curve;
         if (capsule.notValid())
             throw Error("Capsule Verification failed. Capsule Tampered.")
-
-
     }
+
     // todo: verify correctness
 
 
-
     // todo: reEncrypt
-    reEncrypt(kfrag, capsule, provide_proof, proxy_meta, verify_kFrag){
+    reEncrypt(kfrag, capsule, provide_proof, proxy_meta, verify_kFrag) {
         return new cFrag();
     }
 }

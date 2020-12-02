@@ -11,22 +11,25 @@
 // Implementation derived from chacha-ref.c version 20080118
 // See for details: http://cr.yp.to/chacha/chacha-20080128.pdf
 
-function U8TO32_LE (x, i) {
+function U8TO32_LE(x, i) {
     return x[i] | (x[i + 1] << 8) | (x[i + 2] << 16) | (x[i + 3] << 24)
 }
 
-function U32TO8_LE (x, i, u) {
-    x[i] = u; u >>>= 8
-    x[i + 1] = u; u >>>= 8
-    x[i + 2] = u; u >>>= 8
+function U32TO8_LE(x, i, u) {
+    x[i] = u;
+    u >>>= 8
+    x[i + 1] = u;
+    u >>>= 8
+    x[i + 2] = u;
+    u >>>= 8
     x[i + 3] = u
 }
 
-function ROTATE (v, c) {
+function ROTATE(v, c) {
     return (v << c) | (v >>> (32 - c))
 }
 
-var Chacha20 = function (key, nonce, counter) {
+const Chacha20 = function (key, nonce, counter) {
     this.input = new Uint32Array(16)
 
     // https://tools.ietf.org/html/draft-irtf-cfrg-chacha20-poly1305-01#section-2.3
@@ -46,19 +49,25 @@ var Chacha20 = function (key, nonce, counter) {
     this.input[13] = U8TO32_LE(nonce, 0)
     this.input[14] = U8TO32_LE(nonce, 4)
     this.input[15] = U8TO32_LE(nonce, 8)
-}
+};
 
 Chacha20.prototype.quarterRound = function (x, a, b, c, d) {
-    x[a] += x[b]; x[d] = ROTATE(x[d] ^ x[a], 16)
-    x[c] += x[d]; x[b] = ROTATE(x[b] ^ x[c], 12)
-    x[a] += x[b]; x[d] = ROTATE(x[d] ^ x[a], 8)
-    x[c] += x[d]; x[b] = ROTATE(x[b] ^ x[c], 7)
+    x[a] += x[b];
+    x[d] = ROTATE(x[d] ^ x[a], 16)
+    x[c] += x[d];
+    x[b] = ROTATE(x[b] ^ x[c], 12)
+    x[a] += x[b];
+    x[d] = ROTATE(x[d] ^ x[a], 8)
+    x[c] += x[d];
+    x[b] = ROTATE(x[b] ^ x[c], 7)
 }
 
 Chacha20.prototype.encrypt = function (dst, src, len) {
-    var x = new Uint32Array(16)
-    var output = new Uint8Array(64)
-    var i; var dpos = 0; var spos = 0
+    const x = new Uint32Array(16);
+    const output = new Uint8Array(64);
+    let i;
+    let dpos = 0;
+    let spos = 0;
 
     while (len > 0) {
         for (i = 16; i--;) x[i] = this.input[i]
@@ -95,7 +104,7 @@ Chacha20.prototype.encrypt = function (dst, src, len) {
 }
 
 Chacha20.prototype.keystream = function (dst, len) {
-    for (var i = 0; i < len; ++i) dst[i] = 0
+    for (let i = 0; i < len; ++i) dst[i] = 0
     this.encrypt(dst, dst, len)
 }
 
@@ -106,7 +115,7 @@ Chacha20.prototype.keystream = function (dst, len) {
 // Implementation derived from poly1305-donna-16.h
 // See for details: https://github.com/floodyberry/poly1305-donna
 
-var Poly1305 = function (key) {
+const Poly1305 = function (key) {
     this.buffer = new Uint8Array(16)
     this.leftover = 0
     this.r = new Uint16Array(10)
@@ -114,7 +123,8 @@ var Poly1305 = function (key) {
     this.pad = new Uint16Array(8)
     this.finished = 0
 
-    var t = new Uint16Array(8); var i
+    const t = new Uint16Array(8);
+    let i;
 
     for (i = 8; i--;) t[i] = U8TO16_LE(key, i * 2)
 
@@ -137,22 +147,24 @@ var Poly1305 = function (key) {
     this.h[9] = 0
     this.leftover = 0
     this.finished = 0
-}
+};
 
-function U8TO16_LE (p, pos) {
+function U8TO16_LE(p, pos) {
     return (p[pos] & 0xff) | ((p[pos + 1] & 0xff) << 8)
 }
 
-function U16TO8_LE (p, pos, v) {
+function U16TO8_LE(p, pos, v) {
     p[pos] = v
     p[pos + 1] = v >>> 8
 }
 
 Poly1305.prototype.blocks = function (m, mpos, bytes) {
-    var hibit = this.finished ? 0 : (1 << 11)
-    var t = new Uint16Array(8)
-    var d = new Uint32Array(10)
-    var c = 0; var i = 0; var j = 0
+    const hibit = this.finished ? 0 : (1 << 11);
+    const t = new Uint16Array(8);
+    const d = new Uint32Array(10);
+    let c = 0;
+    let i = 0;
+    let j = 0;
 
     while (bytes >= 16) {
         for (i = 8; i--;) t[i] = U8TO16_LE(m, i * 2 + mpos)
@@ -194,20 +206,24 @@ Poly1305.prototype.blocks = function (m, mpos, bytes) {
 }
 
 Poly1305.prototype.update = function (m, bytes) {
-    var want = 0; var i = 0; var mpos = 0
+    let want = 0;
+    let i = 0;
+    let mpos = 0;
 
     if (this.leftover) {
         want = 16 - this.leftover
-        if (want > bytes)
-        {want = bytes}
+        if (want > bytes) {
+            want = bytes
+        }
         for (i = want; i--;) {
             this.buffer[this.leftover + i] = m[i + mpos]
         }
         bytes -= want
         mpos += want
         this.leftover += want
-        if (this.leftover < 16)
-        {return}
+        if (this.leftover < 16) {
+            return
+        }
         this.blocks(this.buffer, 0, 16)
         this.leftover = 0
     }
@@ -228,9 +244,12 @@ Poly1305.prototype.update = function (m, bytes) {
 }
 
 Poly1305.prototype.finish = function () {
-    var mac = new Uint8Array(16)
-    var g = new Uint16Array(10)
-    var c = 0; var mask = 0; var f = 0; var i = 0
+    const mac = new Uint8Array(16);
+    const g = new Uint16Array(10);
+    let c;
+    let mask;
+    let f;
+    let i = 0;
 
     if (this.leftover) {
         i = this.leftover
@@ -274,7 +293,7 @@ Poly1305.prototype.finish = function () {
         this.h[i] = (this.h[i] & mask) | g[i]
     }
 
-    this.h[0] = (this.h[0] ) | (this.h[1] << 13)
+    this.h[0] = (this.h[0]) | (this.h[1] << 13)
     this.h[1] = (this.h[1] >> 3) | (this.h[2] << 10)
     this.h[2] = (this.h[2] >> 6) | (this.h[3] << 7)
     this.h[3] = (this.h[3] >> 9) | (this.h[4] << 4)
@@ -302,15 +321,15 @@ Poly1305.prototype.finish = function () {
     return mac
 }
 
-function poly1305_auth (m, bytes, key) {
-    var ctx = new Poly1305(key)
+function poly1305_auth(m, bytes, key) {
+    const ctx = new Poly1305(key);
     ctx.update(m, bytes)
     return ctx.finish()
 }
 
-function poly1305_verify (mac1, mac2) {
-    var dif = 0
-    for (var i = 0; i < 16; i++) {
+function poly1305_verify(mac1, mac2) {
+    let dif = 0;
+    for (let i = 0; i < 16; i++) {
         dif |= (mac1[i] ^ mac2[i])
     }
     dif = (dif - 1) >>> 31
@@ -321,8 +340,9 @@ function poly1305_verify (mac1, mac2) {
 
 // Written in 2014 by Devi Mandiri. Public domain.
 
-function store64 (dst, num) {
-    var hi = 0; var lo = num >>> 0
+function store64(dst, num) {
+    let hi = 0;
+    let lo = num >>> 0;
     if ((+(Math.abs(num))) >= 1) {
         if (num > 0) {
             hi = ((Math.min((+(Math.floor(num / 4294967296))), 4294967295)) | 0) >>> 0
@@ -330,22 +350,29 @@ function store64 (dst, num) {
             hi = (~~((+(Math.ceil((num - +(((~~(num))) >>> 0)) / 4294967296))))) >>> 0
         }
     }
-    dst.push(lo & 0xff); lo >>>= 8
-    dst.push(lo & 0xff); lo >>>= 8
-    dst.push(lo & 0xff); lo >>>= 8
+    dst.push(lo & 0xff);
+    lo >>>= 8
+    dst.push(lo & 0xff);
+    lo >>>= 8
+    dst.push(lo & 0xff);
+    lo >>>= 8
     dst.push(lo & 0xff)
-    dst.push(hi & 0xff); hi >>>= 8
-    dst.push(hi & 0xff); hi >>>= 8
-    dst.push(hi & 0xff); hi >>>= 8
+    dst.push(hi & 0xff);
+    hi >>>= 8
+    dst.push(hi & 0xff);
+    hi >>>= 8
+    dst.push(hi & 0xff);
+    hi >>>= 8
     dst.push(hi & 0xff)
 }
 
-function aead_mac (polykey, data, ciphertext) {
-    var dlen = data.length
-    var clen = ciphertext.length
-    var dpad = dlen % 16
-    var cpad = clen % 16
-    var m = []; var i
+function aead_mac(polykey, data, ciphertext) {
+    const dlen = data.length;
+    const clen = ciphertext.length;
+    const dpad = dlen % 16;
+    const cpad = clen % 16;
+    const m = [];
+    let i;
 
     for (i = 0; i < dlen; i++) m.push(data[i])
 
@@ -365,18 +392,18 @@ function aead_mac (polykey, data, ciphertext) {
     return poly1305_auth(m, m.length, polykey)
 }
 
-function aeadEncrypt (key, nonce, plaintext, data) {
-    var plen = plaintext.length
-    var buf = new Uint8Array(plen)
-    var ciphertext = new Uint8Array(plen)
-    var polykey = new Uint8Array(64)
-    var ctx = new Chacha20(key, nonce, 0)
+function aeadEncrypt(key, nonce, plaintext, data) {
+    const plen = plaintext.length;
+    const buf = new Uint8Array(plen);
+    const ciphertext = new Uint8Array(plen);
+    const polykey = new Uint8Array(64);
+    const ctx = new Chacha20(key, nonce, 0);
 
     ctx.keystream(polykey, 64)
 
     ctx.keystream(buf, plen)
 
-    for (var i = 0; i < plen; i++) {
+    for (let i = 0; i < plen; i++) {
         ciphertext[i] = buf[i] ^ plaintext[i]
     }
 
@@ -387,59 +414,28 @@ function aeadEncrypt (key, nonce, plaintext, data) {
     return result
 }
 
-function aeadDecrypt (key, nonce, ciphertext, data) {
-    var plen = ciphertext.length - 16
-    var buf = new Uint8Array(plen)
-    var plaintext = new Uint8Array(plen)
-    var polykey = new Uint8Array(64)
-    var ctx = new Chacha20(key, nonce, 0)
+function aeadDecrypt(key, nonce, ciphertext, data) {
+    const plen = ciphertext.length - 16;
+    const buf = new Uint8Array(plen);
+    const plaintext = new Uint8Array(plen);
+    const polykey = new Uint8Array(64);
+    const ctx = new Chacha20(key, nonce, 0);
 
     ctx.keystream(polykey, 64)
 
     const mac = ciphertext.slice(-16)
     ciphertext = ciphertext.slice(0, ciphertext.length - 16)
-    var tag = aead_mac(polykey, data, ciphertext)
+    const tag = aead_mac(polykey, data, ciphertext);
 
     // if (poly1305_verify(tag, mac) !== 1) return false
 
     ctx.keystream(buf, plen)
 
-    for (var i = 0; i < plen; i++) {
+    for (let i = 0; i < plen; i++) {
         plaintext[i] = buf[i] ^ ciphertext[i]
     }
     return plaintext
 }
 
-// --------------------------- test -----------------------------//
-function fromHex (h) {
-    h = h.replace(/([^0-9a-f])/g, '')
-    var out = []; var len = h.length; var w = ''
-    for (var i = 0; i < len; i += 2) {
-        w = h[i]
-        if (((i + 1) >= len) || typeof h[i + 1] === 'undefined') {
-            w += '0'
-        } else {
-            w += h[i + 1]
-        }
-        out.push(parseInt(w, 16))
-    }
-    return out
-}
 
-function bytesEqual (a, b) {
-    var dif = 0
-    if (a.length !== b.length) return 0
-    for (var i = 0; i < a.length; i++) {
-        dif |= (a[i] ^ b[i])
-    }
-    dif = (dif - 1) >>> 31
-    return (dif & 1)
-}
-
-function decodeUTF8 (s) {
-    var i; var d = unescape(encodeURIComponent(s)); var b = new Uint8Array(d.length)
-    for (i = 0; i < d.length; i++) b[i] = d.charCodeAt(i)
-    return b
-}
-
-export { aeadEncrypt, aeadDecrypt }
+export {aeadEncrypt, aeadDecrypt}
