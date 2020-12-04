@@ -60,7 +60,7 @@ class Capsule {
     }
 
     notValid(){
-        const h = CurveBN.hashToCurvebn([fromHexString(this.pointE.encodeCompressed('hex', true)), fromHexString(this.pointV.encodeCompressed('hex', true))], this.curve)
+        const h = CurveBN.hashToCurvebn([this.pointE.encodeCompressed(), this.pointV.encodeCompressed()], this.curve)
 
         const hash_raw = mergeTypedArrays(fromHexString(this.pointE.encodeCompressed('hex', true)), fromHexString(this.pointV.encodeCompressed('hex', true)));
         const hash = kdf_raw(hash_raw, 32, this.bnSig.asBytes(), this.metadata);
@@ -192,7 +192,7 @@ function encrypt (alicePubkey, plaintext) {
 decryption_key = bignum of privatekey... this library is fked...
  */
 
-// todo: add cfrag based decryption
+// ssssssssssssssssssssssstodo: add cfrag based decryption
 function decrypt(ciphertext, capsule, decryption_key, check_proof = true){
     var key = ""
     if (capsule.not_valid()){

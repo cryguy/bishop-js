@@ -1,6 +1,6 @@
 import {defaultCurve} from "./config.js";
 import {CurveBN} from "./curvebn.js";
-import {base64ToArrayBuffer} from "./utils.js";
+import {base64ToArrayBuffer, fromHexString, getASN1_fromQ, mergeTypedArrays} from "./utils.js";
 import elliptic from "elliptic";
 import {unsafeHash2Point} from "./randomOracles";
 
@@ -56,18 +56,19 @@ class CorrectnessProof {
     }
 }
 
+// noinspection JSCheckFunctionSignatures
 class kFrag {
     // todo : unit tests
     constructor(identifier, bn_key, point_commitment, point_precursor, signature_for_proxy, signature_for_bob, key_in_signature) {
-        this._identifier = identifier;
-        this._bn_key = bn_key;
-        this._point_commitment = point_commitment;
-        this._point_precursor = point_precursor;
+        this.identifier = identifier;
+        this.bn_key = bn_key;
+        this.point_commitment = point_commitment;
+        this.point_precursor = point_precursor;
 
-        this._signature_for_proxy = signature_for_proxy;
-        this._signature_for_bob = signature_for_bob;
+        this.signature_for_proxy = signature_for_proxy;
+        this.signature_for_bob = signature_for_bob;
 
-        this._key_in_signature = key_in_signature;
+        this.key_in_signature = key_in_signature;
     }
 
     static fromJson(json) {
@@ -80,7 +81,7 @@ class kFrag {
             defaultCurve.curve.decodePoint(atob(data.point_precursor)),
             atob(data.signature_for_proxy),
             atob(data.signature_for_bob),
-            atob(data.key_in_signature)
+            new Uint8Array([atob(data.key_in_signature)])
         );
     }
 
@@ -88,27 +89,51 @@ class kFrag {
         return JSON.stringify({
             "identifier": btoa(this._identifier),
             "bn_key": btoa(this._bn_key.asBytes()),
-            "point_commitment": btoa(elliptic.utils.toArray(this._point_commitment.encodeCompressed())),
-            "point_precursor": btoa(elliptic.utils.toArray(this._point_precursor.encodeCompressed())),
-            "signature_for_proxy": btoa(this._signature_for_proxy),
-            "signature_for_bob": btoa(this._signature_for_bob),
-            "key_in_signature": btoa(this._key_in_signature)
+            "point_commitment": btoa(elliptic.utils.toArray(this.point_commitment.encodeCompressed())),
+            "point_precursor": btoa(elliptic.utils.toArray(this.point_precursor.encodeCompressed())),
+            "signature_for_proxy": btoa(this.signature_for_proxy),
+            "signature_for_bob": btoa(this.signature_for_bob),
+            "key_in_signature": btoa(this.key_in_signature)
         })
     }
 
-    // todo: verify
-    // todo: verify_for_capsule
+
+    // todo: unit tests
+    
     verify(signing_pubkey, delegating_pubkey, receiving_pubkey, curve, metadata) {
         const u = unsafeHash2Point(curve.g.encodeCompressed(), "NuCypher/UmbralParameters/u", curve); // static
-        const correct_commitment = this._point_commitment.eq(u.mul(this._bn_key)); // this might or might not fuck up
+        const correct_commitment = this.point_commitment.eq(u.mul(this._bn_key)); // this might or might not fuck up
 
         // combine all params to get hash
+        let output = mergeTypedArrays(this.identifier, mergeTypedArrays(this.point_commitment.encodeCompressed(), mergeTypedArrays(fromHexString(getASN1_fromQ(this.point_precursor)), this.key_in_signature)))
 
+        if(this.delegating_key_in_sig())
+            output = mergeTypedArrays(output, fromHexString(getASN1_fromQ(delegating_pubkey)))
+        if(this.receiving_key_in_sig())
+            output = mergeTypedArrays(output, fromHexString(getASN1_fromQ(receiving_pubkey)))
+        if(metadata != null || metadata !== "")
+            output = mergeTypedArrays(output, metadata)
 
+        var ec = new elliptic.eddsa('ed25519');
+
+        // might need to decode point first
+        const pub = ec.keyFromPublic(signing_pubkey);
+
+        return pub.verify(output, this.signature_for_proxy) && correct_commitment;
     }
 
-    // todo: delegating_key_in_sig
-    // todo: receiving_key_in_sig
+    // todo: verify_for_capsule
+    verify_for_capsule(capsule) {
+        return this.verify(capsule.CfragCorrectnessKeys.verifying,capsule.CfragCorrectnessKeys.delegating, capsule.CfragCorrectnessKeys.receiving, capsule.curve, capsule.metadata)
+    }
+
+    delegating_key_in_sig() {
+        return this.key_in_signature[0] === 1 || this.key_in_signature[0] === 3;
+    }
+
+    receiving_key_in_sig() {
+        return this.key_in_signature[0] === 2 || this.key_in_signature[0] === 3;
+    }
 }
 
 
@@ -144,14 +169,44 @@ class cFrag {
         });
     }
 
-    // todo: proof correctness
+    // todo: proof correctness unit test
     proof_correctness(capsule, kFrag, metadata) {
         const curve = capsule.curve;
         if (capsule.notValid())
             throw Error("Capsule Verification failed. Capsule Tampered.")
+
+        const rk = kFrag.bn_key;
+        const t = CurveBN.genRand();
+
+        const u = unsafeHash2Point(curve.g.encodeCompressed(), "NuCypher/UmbralParameters/u", curve); // static
+
+        const e2 = capsule.pointE.mul(t)
+        const v2 = capsule.pointV.mul(t)
+        const u2 = u.mul(t);
+
+        let input = [
+            ...capsule.pointE.encodeCompressed(),
+            ...capsule.pointV.encodeCompressed(),
+            ...this.e1.encodeCompressed(),
+            ...this.v1.encodeCompressed(),
+            ...u.encodeCompressed(),
+            ...kFrag.point_commitment.encodeCompressed(),
+            ...e2.encodeCompressed(),
+            ...v2.encodeCompressed(),
+            ...u2.encodeCompressed(),
+        ]
+        if(metadata != null && metadata !== "")
+            input = input.push(Uint8Array.from([...metadata]))
+
+        const h = CurveBN.hashToCurvebn(input, curve)
+        // t + h * rk
+        const z3 = t.add(h.mul(rk))
+
+        this.proof = new CorrectnessProof(e2, v2, kFrag.point_commitment, u2, z3, kFrag.signature_for_bob )
     }
 
     // todo: verify correctness
+
 
 
     // todo: reEncrypt
