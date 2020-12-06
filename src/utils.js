@@ -35,7 +35,7 @@ export function getASN1_pub(key){
                         "4D7E6D7C61B229E9C5A27ECED3D90220100000000000000000000000000000" +
                         "0014DEF9DEA2F79CD65812631A5CF5D3ED020108";
 
-    const keyfield = "03420004" + key.x.toString().padStart(64,"0") + key.y.toString().padStart(64,"0")
+    const keyfield = "03420004" + key.x.toString('hex').padStart(64,"0") + key.y.toString('hex').padStart(64,"0")
     const before_final = curve_info + keyfield;
 
     // 82 01 31 = 2 bytes, 01 31 = 305 in hex

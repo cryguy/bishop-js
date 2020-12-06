@@ -9,20 +9,6 @@ import {fromHexString, base64ToArrayBuffer} from "./utils.js";
 
 
 // todo: unit tests
-// smh...
-global.Buffer = global.Buffer || require('buffer').Buffer;
-
-if (typeof btoa === 'undefined') {
-    global.btoa = function (str) {
-        return new Buffer(str, 'binary').toString('base64');
-    };
-}
-
-if (typeof atob === 'undefined') {
-    global.atob = function (b64Encoded) {
-        return new Buffer(b64Encoded, 'base64').toString('binary');
-    };
-}
 
 class Capsule {
     constructor (pointE, pointV, bnSig, metadata, hash, curve) {
@@ -192,7 +178,7 @@ function encrypt (alicePubkey, plaintext) {
 decryption_key = bignum of privatekey... this library is fked...
  */
 
-// ssssssssssssssssssssssstodo: add cfrag based decryption
+// todo: add cfrag based decryption
 function decrypt(ciphertext, capsule, decryption_key, check_proof = true){
     var key = ""
     if (capsule.not_valid()){

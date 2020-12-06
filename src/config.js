@@ -2,7 +2,25 @@ import elliptic from 'elliptic'
 import curves from 'elliptic'
 
 import hash from 'hash.js'
-const EC = elliptic.ec
+const EC = elliptic
+
+
+global.Buffer = global.Buffer || require('buffer').Buffer;
+
+if (typeof btoa === 'undefined') {
+    global.btoa = function (str) {
+        return new Buffer(str, 'binary').toString('base64');
+    };
+}
+
+if (typeof atob === 'undefined') {
+    global.atob = function (b64Encoded) {
+        return new Buffer(b64Encoded, 'base64').toString('binary');
+    };
+}
+
+
+
 
 // define curve25519-weier
 const curve = new curves.curves.PresetCurve({
@@ -20,7 +38,8 @@ const curve = new curves.curves.PresetCurve({
     ]
 });
 
-const defaultCurve = EC(curve);
+const defaultCurve = EC.ec(curve);
+const EdDSA = new EC.eddsa('ed25519');
 
 // NOTE TO SELF!!! we are using weierstrass form in java, always look up weierstrass form of curve25519
 //const defaultCurve = new EC('curve25519-weier')
@@ -30,6 +49,7 @@ const DEM_NONCE_SIZE = 12;
 const DEM_KEYSIZE = 32;
 
 export {
+    EdDSA,
     defaultCurve,
     PUBLIC_KEY_LENGTH,
     CAPSULE_LENGTH,
