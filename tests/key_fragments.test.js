@@ -3,8 +3,8 @@ import {kFrag, cFrag, CorrectnessProof} from "../src/key_fragments.js";
 import {Capsule} from "../src/pre.js"
 import assert from 'assert';
 import _ from "lodash";
-
-
+import {toHexString} from "../src/utils.js";
+import {sha512} from "../src/utils.js";
 /*
 alice Private : 32ca18512f2a7be94b7a3b20fdfe099c0b01acc77ca644837ae60413ec51d36
 alice Signing : 911B767C66395F2C31CEFAFE1348B5371087C1935327917C3D160741AA16469D
@@ -14,7 +14,8 @@ Signature : DCB7D149E35E7A004D372E7008DEDFEC2C5A17B5753CC94646382F2DD01345DE3D05
  */
 
 const alice = defaultCurve.keyFromPrivate("853df22ce4f89326d74429d3a925797034bc881829334a07e1efd606fcf7dd2");
-const alice_public = alice.getPublic()
+const alice_public = alice.getPublic();
+
 const alice_ed = EdDSA.keyFromSecret("B4B5E3B387CE16AA3754C0836C5A076A90B71E286EF60699FE61F3A0F845369B");
 
 const msgHash = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -37,6 +38,14 @@ describe('kFrag', function() {
     it('Deserialization works the same as java and is still valid', function() {
         assert(kfrag.verify(alice_ed.getPublic(), alice_public, bob_public, defaultCurve.curve, ""))
     })
+
+    it('test kfrag generation', function (){
+        let kfrags = kFrag.generate_kfrags(alice,bob_public,3,5, alice_ed, true,true, null )
+        kfrags.forEach(value => {
+            assert(value.verify(alice_ed.getPublic(), alice_public, bob_public, defaultCurve.curve, ""))
+        })
+    })
+
     it('Assert Signing still is the same with java', function () {
         assert.equal(signature,"293113E1606AA86EBD3BB53CDA04E77CA6C282632605FD5D399FB2B7EA282355FCDD35311253E1F2443780D1869ABC463FE18FA12FB3716CC0B788901FFF8508")
     })
@@ -44,6 +53,19 @@ describe('kFrag', function() {
     it('Serialization will return the same result as input json', function (){
         assert(_.isEqual(JSON.parse(kfrag.asJson()), JSON.parse(json_data)))
     })
+
+    // it('test poly_eval with random privatekey', function () {
+    //     const utf8Encode = new TextEncoder();
+    //     let coefficients = []
+    //     coefficients.push(new CurveBN(defaultCurve.genKeyPair().getPrivate()))
+    //     coefficients.push(new CurveBN(defaultCurve.genKeyPair().getPrivate()))
+    //     coefficients.push(new CurveBN(defaultCurve.genKeyPair().getPrivate()))
+    //     console.log(coefficients.forEach(value => {
+    //         console.log(toHexString(value.asBytes()))
+    //     }))
+    //     const share_index = CurveBN.hashToCurvebn([utf8Encode.encode("HELLO WORLD")],CurveBN.genRand().curve)
+    //     console.log(toHexString(CurveBN.poly_eval(coefficients, share_index).asBytes()))
+    // })
 })
 
 
@@ -67,10 +89,27 @@ describe('cFrag', function (){
         // check rest of cFrag
         assert(_.isEqual(cfragJson, parse))
     })
+
     it('verify for capsule', function (){
         const utf8Encode = new TextEncoder();
 
         assert(cFrag.reEncrypt(kfrag, capsule, true, utf8Encode.encode(""), true, not_random).verify_correctness(capsule))
         assert(!cFrag.reEncrypt(kfrag, capsule, true, utf8Encode.encode("WILLFAIL"), true, not_random).verify_correctness(capsule))
+    })
+})
+
+describe('ECDH', function () {
+    it('test ECDH', function () {
+        const privateKey = defaultCurve.keyFromPrivate("0F3E8B301BDB6D230EA61FA52E4CE2C4A8349D261C997304E31AC3FCECB9E428")
+        const publicKey = defaultCurve.keyFromPublic("027142ABAA23E11F03873B63B030550838393B542757BC1D605C8FAD6E4BBCEC39", 'hex').getPublic()
+        //console.log(toHexString(privateKey.derive(publicKey).toArray('be', defaultCurve.curve.n.byteLength())))
+
+        assert(_.isEqual(privateKey.derive(publicKey).toString(16).toUpperCase(), "6CF1714285BD7183DF69850580ED5060583D50FBE299E298A6D52A35C89323FB"))
+    })
+})
+
+describe('SHA512', function() {
+    it('sha512 get first 16', function() {
+        assert(_.isEqual(toHexString(sha512("NON_INTERACTIVE")), "4c591cee9247687d".toUpperCase()))
     })
 })

@@ -1,5 +1,6 @@
 import base64js from 'base64-js'
 import {defaultCurve} from "./config.js";
+import hash from "hash.js";
 
 function toHexString (byteArray) {
     return Array.prototype.map.call(byteArray, x => ('00' + x.toString(16)).slice(-2)).join('').toUpperCase()
@@ -42,6 +43,9 @@ export function getASN1_pub(key){
     return "30820131"+before_final;
 }
 
+export function sha512(msg) {
+    return fromHexString(hash.sha512().update(msg).digest('hex').substr(0,16))
+}
 
 export function base64ToArrayBuffer(signature) {
     var binary_string = atob(signature);
@@ -53,10 +57,9 @@ export function base64ToArrayBuffer(signature) {
     return bytes.buffer;
 }
 
-
 function mergeTypedArrays(a, b) {
     // Checks for truthy values on both arrays
-    if(!a && !b) throw 'Please specify valid arguments for parameters a and b.';
+    if(!a && !b) throw Error('Please specify valid arguments for parameters a and b.');
 
     // Checks for truthy values or empty arrays on each argument
     // to avoid the unnecessary construction of a new array and
@@ -66,7 +69,7 @@ function mergeTypedArrays(a, b) {
 
     // Make sure that both typed arrays are of the same type
     if(Object.prototype.toString.call(a) !== Object.prototype.toString.call(b))
-        throw 'The types of the two arguments passed for parameters a and b do not match.';
+        throw Error('The types of the two arguments passed for parameters a and b do not match.');
 
     const c = new a.constructor(a.length + b.length);
 
@@ -76,7 +79,6 @@ function mergeTypedArrays(a, b) {
     return c;
 }
 
-
 function fromHexString (str) {
     var a = []
     for (var i = 0, len = str.length; i < len; i += 2) {
@@ -85,12 +87,5 @@ function fromHexString (str) {
     return new Uint8Array(a)
 }
 
-function toBase64 (bytes) {
-    return base64js.fromByteArray(bytes)
-}
 
-function fromBase64 (base64) {
-    return base64js.toByteArray(base64)
-}
-
-export { toHexString, fromHexString, toBase64, fromBase64, mergeTypedArrays }
+export { toHexString, fromHexString, mergeTypedArrays }

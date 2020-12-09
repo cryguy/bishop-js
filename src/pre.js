@@ -3,7 +3,7 @@ import {UmbralDEM} from './dem.js'
 import {kdf, kdf_raw} from './randomOracles.js'
 import {CurveBN} from './curvebn.js'
 import {defaultCurve, DEM_KEYSIZE} from './config.js'
-import {mergeTypedArrays} from "./utils.js";
+import {getASN1_pub, mergeTypedArrays, sha512, toHexString} from "./utils.js";
 import _ from "lodash"
 import {fromHexString, base64ToArrayBuffer} from "./utils.js";
 
@@ -110,12 +110,12 @@ class Capsule {
 
 }
 
-// todo: generate kFrag
-// todo: get kFrag
-
 function _decapsulateOriginal (privateKey, capsule, keyLength = DEM_KEYSIZE) {
-    const sharedKey = capsule.pointE.add(capsule.pointV).mul(privateKey)
-    return kdf(sharedKey, keyLength)
+    let sharedKey = capsule.pointE.add(capsule.pointV).mul(privateKey.getPrivate()).encodeCompressed()
+    if (capsule.metadata != null)
+        sharedKey = mergeTypedArrays(sharedKey, Buffer.from(capsule.metadata))
+
+    return kdf_raw(sharedKey, keyLength)
 }
 
 function _encapsulate (alicePubkey, metadata, keyLength = DEM_KEYSIZE) {
@@ -136,16 +136,21 @@ function _encapsulate (alicePubkey, metadata, keyLength = DEM_KEYSIZE) {
     const sharedKey = alicePubkey.mul(
         privR.add(privU).bn
     )
+    //console.log(toHexString(privR.asBytes()) + " E")
+    //console.log(toHexString(privU.asBytes()) + " V")
+    const hash_raw = mergeTypedArrays(Buffer.from(pubR.encodeCompressed()), Buffer.from(pubU.encodeCompressed()));
+    const hash = kdf_raw(hash_raw, keyLength, Buffer.from(s.asBytes()), metadata);
 
-    // i ducking hate javascript...
+    let key_raw = sharedKey.encodeCompressed();
 
-    // this is in hex...
-    const hash_raw = mergeTypedArrays(pubR.encodeCompressed(), pubU.encodeCompressed());
+    if (metadata != null)
+        key_raw = mergeTypedArrays(sharedKey.encodeCompressed(), Buffer.from(metadata))
 
-    const hash = kdf_raw(hash_raw, keyLength, s.bn.asBytes(), metadata);
+    //console.log("KEY RAW : " + toHexString(key_raw))
+    const key = kdf_raw(key_raw, keyLength)
 
-    const key = kdf(sharedKey, keyLength);
-    const capsule = new Capsule(pubR, pubU, s, metadata, hash, alicePubkey.curve.params);
+    //const key = kdf(sharedKey, keyLength);
+    const capsule = new Capsule(pubR, pubU, s, metadata, hash, alicePubkey.curve);
 
     return {
         key, capsule
@@ -169,29 +174,104 @@ function encrypt (alicePubkey, plaintext) {
         }
     }
 
-    const { key, capsule } = _encapsulate(alicePubkey, DEM_KEYSIZE)
+    const { key, capsule } = _encapsulate(alicePubkey,'', DEM_KEYSIZE)
     const ciphertext = new UmbralDEM(key).encrypt(plaintext, capsule.asBytes())
 
     return { ciphertext, capsule }
 }
-/*
-decryption_key = bignum of privatekey... this library is fked...
- */
+
+function _decapsulateRe(receiving, capsule, key_length, metadata){
+
+    const precursor = defaultCurve.keyFromPublic(capsule.firstCFrag().precursor,'hex').getPublic()
+
+    const dh = receiving.derive(precursor).toArray('be', defaultCurve.curve.n.byteLength());
+
+
+    let bn_xs = []
+
+    capsule.AttachedCfrags.forEach(value =>{
+
+        const items_bn = [
+            fromHexString(getASN1_pub(precursor)),
+            receiving.getPublic().encodeCompressed(),
+            dh,
+            sha512("X_COORDINATE"),
+        ]
+        items_bn.push(Buffer.from(value.kfrag_id));
+        bn_xs.push(CurveBN.hashToCurvebn(items_bn, capsule.curve))
+    })
+
+    let e_sum = []
+    let v_sum = []
+
+    bn_xs.forEach((value, index) => {
+        const cfrag = capsule.AttachedCfrags[index]
+        if (!precursor.eq(cfrag.precursor))
+            throw Error('CFrag not pairwise consistent')
+        const lambda_i = CurveBN.lambdaCoeff(value, bn_xs)
+        e_sum.push(cfrag.e1.mul(lambda_i.bn))
+        v_sum.push(cfrag.v1.mul(lambda_i.bn))
+    })
+
+    let e_prime = e_sum[0]
+    let v_prime = v_sum[0]
+
+    for (let i = 1; i < e_sum.length; i++) {
+        e_prime = e_prime.add(e_sum[i])
+        v_prime = v_prime.add(v_sum[i])
+    }
+
+    let items = [
+        fromHexString(getASN1_pub(precursor)),
+        receiving.getPublic().encodeCompressed(),
+        dh,
+        sha512("NON_INTERACTIVE")
+    ];
+
+    if (metadata != null)
+        items.push(Buffer.from(metadata))
+    const d = CurveBN.hashToCurvebn(items, capsule.curve)
+
+
+    // todo : throw Error here
+    const h = CurveBN.hashToCurvebn([capsule.pointE.encodeCompressed(), capsule.pointV.encodeCompressed()], capsule.curve);
+
+
+
+    let key = e_prime.add(v_prime).mul(d.bn).encodeCompressed();
+    if (metadata != null)
+        key = mergeTypedArrays(Buffer.from(key), Buffer.from(metadata))
+
+    return kdf_raw(key,32)
+}
+
+function _open_capsule(receiving, capsule, check_proof){
+    if(check_proof){
+        capsule.AttachedCfrags.forEach(value => {
+            if (value.verify(capsule))
+                throw Error('Invalid cFrag found!')
+        })
+    }
+    return _decapsulateRe(receiving, capsule, 32, capsule.metadata)
+}
 
 // todo: add cfrag based decryption
 function decrypt(ciphertext, capsule, decryption_key, check_proof = true){
-    var key = ""
-    if (capsule.not_valid()){
+    let key = "";
+    if (capsule.notValid()){
         throw Error("Capsule Verification Failed. Capsule tampered.")
     }
     try {
-        key = ""
+        key = _decapsulateRe(decryption_key,capsule,32,capsule.metadata)
     } catch (e) {
-        const sharedKey = capsule.pointE.add(capsule.pointV).mul(decryption_key)
-        key = kdf(sharedKey, keyLength)
+
+        key = _decapsulateOriginal(decryption_key,capsule)
     }
+
+
+
     return (new UmbralDEM(key)).decrypt(ciphertext, capsule.asBytes())
 }
 
 
-export { encrypt, _encapsulate, _decapsulateOriginal, Capsule }
+export { encrypt, _encapsulate, _decapsulateOriginal, Capsule, decrypt }

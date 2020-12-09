@@ -13,10 +13,12 @@ function kdf (ecpoint, keyLength = DEM_KEYSIZE, salt = '', info = '') {
 }
 
 function kdf_raw (bytes, keyLength = DEM_KEYSIZE, salt = '', info = '') {
+    //console.log(info)
     const ikm = Buffer.from(bytes)
     salt = Buffer.from(salt)
     if (info == null)
-        info = ''
+        info = Buffer.from([])
+    //console.log(info)
     info = Buffer.from(info)
 
     const hkdf = new HKDF(blake2b512, ikm, salt, info)

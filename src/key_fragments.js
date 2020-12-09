@@ -1,15 +1,13 @@
 import {defaultCurve, EdDSA} from "./config.js";
 import {CurveBN} from "./curvebn.js";
-import {
-    base64ToArrayBuffer,
-    fromHexString,
-    getASN1_pub,
-    mergeTypedArrays,
-    toHexString
-} from "./utils.js";
+import {base64ToArrayBuffer, fromHexString, getASN1_pub, mergeTypedArrays, toHexString} from "./utils.js";
 import elliptic from "elliptic";
 import {unsafeHash2Point} from "./randomOracles.js";
 import {BN} from 'bn.js'
+import {getASN1_fromQ} from "./utils.js";
+import {sha512} from "./utils.js";
+import randval from "get-random-values";
+import {sign} from "noble-ed25519";
 
 class CorrectnessProof {
 
@@ -64,6 +62,7 @@ class CorrectnessProof {
 
 
 class kFrag {
+
     constructor(identifier, bn_key, point_commitment, point_precursor, signature_for_proxy, signature_for_bob, key_in_signature) {
         this.identifier = identifier;
         this.bn_key = bn_key;
@@ -102,19 +101,110 @@ class kFrag {
         })
     }
 
+    static generate_kfrags(delegating_privkey, receiving_pubkey, threshold, N, signer, sign_delegating, sign_receiving, metadata){
+        if (threshold <= 0 || threshold > N)
+            throw Error("Arguments threshold and N must satisfy 0 < threshold <= N")
+
+        let delegating_pub = delegating_privkey.getPublic() // might be wrong here...
+
+        const bob_pubkey_point = receiving_pubkey.encodeCompressed();
+
+        const keyPair = defaultCurve.genKeyPair();
+
+
+        //console.log(keyPair.getPrivate('hex') + " KEY!")
+        const precursor = keyPair.getPublic();
+        //console.log(toHexString(precursor.encodeCompressed()) + " PRE")
+        const dh = keyPair.derive(receiving_pubkey).toArray('be', defaultCurve.curve.n.byteLength()); // in bytes
+
+        let input = [
+            fromHexString(getASN1_pub(precursor)),
+            bob_pubkey_point,
+            dh,
+            sha512("NON_INTERACTIVE")
+        ]
+        if (metadata != null)
+            input.push(sha512(metadata)) // metadata should be hex here
+
+        const d = CurveBN.hashToCurvebn(input, defaultCurve.curve)
+
+        //console.log(d.bn.toString(16,'0') + " D")
+        let coefficients = []
+
+        const inv_d = d.inv()
+        //console.log(inv_d.bn.toString(16,0))
+        coefficients.push(inv_d.mul(new CurveBN(delegating_privkey.getPrivate()))) // could cause a problem??? it should be delegating * inv_d...
+
+        for (let i = 0; i < threshold - 1; i++) {
+            coefficients.push(new CurveBN(defaultCurve.genKeyPair().getPrivate()))
+        }
+
+        let kFrags = []
+        for (let i = 0; i < N; i++) {
+            var buf = new Uint8Array(32);
+            randval(buf);
+            kFrags.push(this.generate(receiving_pubkey, signer, sign_delegating, sign_receiving, defaultCurve.curve, delegating_pub, bob_pubkey_point, precursor, dh, coefficients, buf, metadata))
+        }
+        return kFrags;
+    }
+
+    static generate(receiving_pubkey, signer, sign_delegating, sign_receiving, curve, delegating_pub, bob_pubkey_point, precursor, dh, coefficients, kfrag_id, metadata) {
+        const share_index = CurveBN.hashToCurvebn([
+            fromHexString(getASN1_pub(precursor)),
+            bob_pubkey_point,
+            dh,
+            sha512("X_COORDINATE"), // fromHexString("EBF0029CBA5ACE91"), // sha512(X-COORDINATE).substr(0,8)
+            kfrag_id
+        ], curve);
+        // this is broken somewhere here...
+        const rk = CurveBN.poly_eval(coefficients, share_index).bn
+
+        const commitment = unsafeHash2Point(curve.g.encodeCompressed(), "NuCypher/UmbralParameters/u", curve).mul(rk);
+
+        let sign_bob = mergeTypedArrays(kfrag_id, mergeTypedArrays(fromHexString(getASN1_pub(delegating_pub)), mergeTypedArrays(fromHexString(getASN1_pub(receiving_pubkey)), mergeTypedArrays(Buffer.from(commitment.encodeCompressed()), fromHexString(getASN1_pub(precursor))))))
+
+        if (metadata != null)
+            sign_bob = mergeTypedArrays(sign_bob, metadata)
+
+        const signature_for_bob = fromHexString(signer.sign(sign_bob).toHex())
+        let mode = 0;
+        if (sign_delegating && sign_receiving)
+            mode = 3;
+        else if (sign_delegating)
+            mode = 1;
+        else if (sign_receiving)
+            mode = 2;
+
+        let sign_proxy = mergeTypedArrays(kfrag_id, mergeTypedArrays(Buffer.from(commitment.encodeCompressed()), mergeTypedArrays(Buffer.from(fromHexString(getASN1_pub(precursor))), new Uint8Array([mode]))))
+
+        if (sign_delegating)
+            sign_proxy = mergeTypedArrays(sign_proxy, fromHexString(getASN1_pub(delegating_pub)));
+        if (sign_receiving)
+            sign_proxy = mergeTypedArrays(sign_proxy, fromHexString(getASN1_pub(receiving_pubkey)));
+        if (metadata != null)
+            sign_proxy = mergeTypedArrays(sign_proxy, metadata);
+
+
+        const signature_for_proxy = fromHexString(signer.sign(sign_proxy).toHex());
+
+        return new kFrag(kfrag_id, rk, commitment, precursor, signature_for_proxy, signature_for_bob, new Uint8Array([mode]));
+    }
+
+    // tested
     verify(signing_pubkey, delegating_pubkey, receiving_pubkey, curve, metadata) {
         const u = unsafeHash2Point(curve.g.encodeCompressed(), "NuCypher/UmbralParameters/u", curve); // static
+
         const correct_commitment = this.point_commitment.eq(u.mul(this.bn_key)); // this might or might not fuck up
 
-        let output = mergeTypedArrays(Buffer.from(this.identifier), mergeTypedArrays(Buffer.from(this.point_commitment.encodeCompressed()), mergeTypedArrays(fromHexString(getASN1_pub(this.point_precursor)), this.key_in_signature)))
+        let output = mergeTypedArrays(Buffer.from(this.identifier), mergeTypedArrays(Buffer.from(this.point_commitment.encodeCompressed()), mergeTypedArrays(Buffer.from(fromHexString(getASN1_pub(this.point_precursor))), this.key_in_signature)))
 
-        if(this.delegating_key_in_sig())
+        if(this.delegating_key_in_sig()) {
             output = mergeTypedArrays(output, fromHexString(getASN1_pub(delegating_pubkey)))
-
-        if(this.receiving_key_in_sig())
+        }
+        if(this.receiving_key_in_sig()) {
             output = mergeTypedArrays(output, fromHexString(getASN1_pub(receiving_pubkey)))
-
-        if(metadata != null || metadata !== "")
+        }
+        if(metadata != null)
             output = mergeTypedArrays(output, metadata)
 
         // might need to decode point first
@@ -141,7 +231,7 @@ class cFrag {
     constructor(e1, v1, kFrag_id, precursor, correctnessProof) {
         this.e1 = e1;
         this.v1 = v1;
-        this.kFrag_id = kFrag_id;
+        this.kfrag_id = kFrag_id;
         this.precursor = precursor;
         this.proof = correctnessProof;
     }
@@ -151,8 +241,8 @@ class cFrag {
         const proof = data.proof ? CorrectnessProof.fromJson(data.proof) : null;
         return new cFrag(
             defaultCurve.curve.decodePoint(atob(data.e1)),
-            defaultCurve.curve.decodePoint(atob(data.e2)),
-            atob(data.kfrag_id),
+            defaultCurve.curve.decodePoint(atob(data.v1)),
+            base64ToArrayBuffer(data.kfrag_id),
             defaultCurve.curve.decodePoint(atob(data.precursor)),
             proof
         );
@@ -162,7 +252,7 @@ class cFrag {
         return JSON.stringify({
             "e1": btoa(elliptic.utils.toArray(this.e1.encodeCompressed())),
             "v1": btoa(elliptic.utils.toArray(this.v1.encodeCompressed())),
-            "kfrag_id": btoa(this.kFrag_id),
+            "kfrag_id": btoa(this.kfrag_id),
             "precursor": btoa(elliptic.utils.toArray(this.precursor.encodeCompressed())),
             "proof": this.proof ? this.proof.asJson() : null
         });
@@ -236,7 +326,7 @@ class cFrag {
         const h = CurveBN.hashToCurvebn(input, capsule.curve)
 
 
-        let output = mergeTypedArrays(Buffer.from(this.kFrag_id), mergeTypedArrays(fromHexString(getASN1_pub(capsule.CfragCorrectnessKeys.delegating)), mergeTypedArrays(fromHexString(getASN1_pub(capsule.CfragCorrectnessKeys.receiving)), mergeTypedArrays(Buffer.from(this.proof.commitment.encodeCompressed()), fromHexString(getASN1_pub(this.precursor))))))
+        let output = mergeTypedArrays(Buffer.from(this.kfrag_id), mergeTypedArrays(fromHexString(getASN1_pub(capsule.CfragCorrectnessKeys.delegating)), mergeTypedArrays(fromHexString(getASN1_pub(capsule.CfragCorrectnessKeys.receiving)), mergeTypedArrays(Buffer.from(this.proof.commitment.encodeCompressed()), fromHexString(getASN1_pub(this.precursor))))))
 
         if (capsule.metadata != null && capsule.metadata !== "")
         {
@@ -262,6 +352,7 @@ class cFrag {
         const rk = kfrag.bn_key;
 
         const e1 = capsule.pointE.mul(rk);
+
         const v1 = capsule.pointV.mul(rk);
 
         const cfrag = new cFrag(e1,v1,kfrag.identifier, kfrag.point_precursor)
@@ -273,4 +364,4 @@ class cFrag {
     }
 }
 
-export {kFrag,cFrag,CorrectnessProof}
+export {kFrag, cFrag, CorrectnessProof}
