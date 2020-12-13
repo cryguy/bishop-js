@@ -2,10 +2,11 @@ import elliptic from 'elliptic'
 import curves from 'elliptic'
 
 import hash from 'hash.js'
+import buffer from 'buffer'
 const EC = elliptic
 
 
-global.Buffer = global.Buffer || require('buffer').Buffer;
+global.Buffer = global.Buffer || buffer.Buffer;
 
 if (typeof btoa === 'undefined') {
     global.btoa = function (str) {

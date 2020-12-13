@@ -427,7 +427,7 @@ function aeadDecrypt(key, nonce, ciphertext, data) {
     ciphertext = ciphertext.slice(0, ciphertext.length - 16)
     const tag = aead_mac(polykey, data, ciphertext);
 
-    // if (poly1305_verify(tag, mac) !== 1) return false
+    if (poly1305_verify(tag, mac) !== 1) return false
 
     ctx.keystream(buf, plen)
 

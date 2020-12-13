@@ -7,14 +7,14 @@ module.exports = {
     output: {
         path: path.resolve('dist'),
         filename: '[name].bundle.js',
-        library: 'bishop-js',
-        libraryTarget: 'commonjs2'
+        library: 'bishopjs',
+        libraryTarget: 'window',
     },
-    optimization: {
-        splitChunks: {
-            chunks: 'all',
-        },
-    },
+    // optimization: {
+    //     splitChunks: {
+    //         chunks: 'all',
+    //     },
+    // },
     module: {
         rules: [
             {

@@ -1,10 +1,9 @@
 import elliptic from 'elliptic'
 import {UmbralDEM} from './dem.js'
-import {kdf, kdf_raw} from './randomOracles.js'
+import {kdf_raw} from './randomOracles.js'
 import {CurveBN} from './curvebn.js'
 import {defaultCurve, DEM_KEYSIZE} from './config.js'
-import {getASN1_pub, mergeTypedArrays, sha512, toHexString} from "./utils.js";
-import _ from "lodash"
+import {getASN1_pub, mergeTypedArrays, sha512} from "./utils.js";
 import {fromHexString, base64ToArrayBuffer} from "./utils.js";
 
 
@@ -51,7 +50,7 @@ class Capsule {
         const hash_raw = mergeTypedArrays(fromHexString(this.pointE.encodeCompressed('hex', true)), fromHexString(this.pointV.encodeCompressed('hex', true)));
         const hash = kdf_raw(hash_raw, 32, this.bnSig.asBytes(), this.metadata);
 
-        return !(this.curve.g.mul(this.bnSig.bn).eq(this.pointV.add(this.pointE.mul(h.bn))) && _.isEqual(btoa(this.hash), btoa(hash)))
+        return !(this.curve.g.mul(this.bnSig.bn).eq(this.pointV.add(this.pointE.mul(h.bn))) && (btoa(this.hash) === btoa(hash)))
     }
 
     asBytes () {
@@ -236,8 +235,8 @@ function _decapsulateRe(receiving, capsule, key_length, metadata){
     // todo : throw Error here
     const h = CurveBN.hashToCurvebn([capsule.pointE.encodeCompressed(), capsule.pointV.encodeCompressed()], capsule.curve);
 
-
-
+    if (!capsule.CfragCorrectnessKeys.delegating.mul(capsule.bnSig.div(d).bn).eq(v_prime.add(e_prime.mul(h.bn))))
+        throw Error('invalid')
     let key = e_prime.add(v_prime).mul(d.bn).encodeCompressed();
     if (metadata != null)
         key = mergeTypedArrays(Buffer.from(key), Buffer.from(metadata))
@@ -264,7 +263,6 @@ function decrypt(ciphertext, capsule, decryption_key, check_proof = true){
     try {
         key = _decapsulateRe(decryption_key,capsule,32,capsule.metadata)
     } catch (e) {
-
         key = _decapsulateOriginal(decryption_key,capsule)
     }
 

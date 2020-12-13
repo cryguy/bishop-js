@@ -1,6 +1,6 @@
-import crypto from 'crypto'
 import { aeadEncrypt, aeadDecrypt } from './chacha20Poly1305.js'
 import { DEM_NONCE_SIZE, DEM_KEYSIZE } from './config.js'
+import randval from "get-random-values";
 
 class UmbralDEM {
     constructor (symKey) {
@@ -20,11 +20,12 @@ class UmbralDEM {
         /*
           Encrypts data using ChaCha20-Poly1305 with optional authenticated data.
           */
-
-        const nonce = crypto.randomBytes(DEM_NONCE_SIZE)
+        var buf = new Uint8Array(12);
+        randval(buf);
+        const nonce = buf
         const encData = aeadEncrypt(
             this.key, nonce, data, authenticatedData.length === null ? new Uint8Array() : authenticatedData)
-        return Uint8Array.from([...new Uint8Array(nonce), ...encData])
+        return Uint8Array.from([...buf, ...encData])
     }
 
     decrypt (ciphertext, authenticatedData = null) {

@@ -1,9 +1,7 @@
 import elliptic from 'elliptic'
 import BN from 'bn.js'
 import { defaultCurve } from './config.js'
-import crypto from 'crypto'
 import blake2b from 'blake2b'
-import {toHexString} from "./utils.js";
 
 class CurveBN {
     constructor (bignum, curve) {
@@ -58,11 +56,7 @@ class CurveBN {
     }
 
     static genRand (curve = defaultCurve) {
-        let rand = new BN(crypto.randomBytes(32), 16)
-        while (rand.lt(0) || rand.gt(curve.n)) {
-            rand = new BN(crypto.randomBytes(32), 16)
-        }
-        return new CurveBN(rand, curve)
+        return new CurveBN(defaultCurve.genKeyPair().getPrivate(), curve)
     }
 
     static hashToCurvebn (cryptoItems, curve, customizationString = '', hashClass = blake2b) {
